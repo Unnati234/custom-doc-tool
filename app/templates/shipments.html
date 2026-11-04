@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Shipments · DocCheck{% endblock %}
 {% block content %}
-<div class="page-head">
+<div class="page-head row-between">
   <h1>Shipments</h1>
+  <a class="btn" href="{{ url_for('main.new_shipment') }}">New shipment</a>
 </div>
 
 <nav class="filters">
@@ -23,7 +24,7 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td class="mono">{{ r.s.id }}</td>
+      <td class="mono"><a href="{{ url_for('main.shipment_detail', shipment_id=r.s.id) }}">{{ r.s.id }}</a></td>
       <td>{{ r.s.supplier_name }}</td>
       <td>{{ r.s.importer_name }}</td>
       <td>{{ r.docs }} of 3</td>

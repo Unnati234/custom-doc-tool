@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ shipment.id }} · DocCheck{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('main.shipments') }}">← Shipments</a></p>
+<div class="page-head">
+  <h1><span class="mono">{{ shipment.id }}</span>
+    <span class="badge {{ shipment.status }}">{{ STATUS_LABELS[shipment.status] }}</span></h1>
+  <p class="muted">{{ shipment.supplier_name }} → {{ shipment.importer_name }}</p>
+</div>
+
+<div class="doc-grid">
+{% for key, label in DOC_TYPES.items() %}
+  {% set doc = docs.get(key) %}
+  <section class="card">
+    <h2>{{ label }}</h2>
+    {% if doc %}
+      <p class="muted">
+        {% if doc.extraction_status == 'pending' %}Uploaded · not extracted yet
+        {% elif doc.extraction_status == 'done' %}Extracted
+        {% elif doc.extraction_status == 'manual' %}Manual entry needed
+        {% else %}Extraction failed{% endif %}
+      </p>
+      {% if doc.file_path %}
+        <p><a href="{{ url_for('main.document_file', doc_id=doc.id) }}" target="_blank" rel="noopener">View file</a></p>
+      {% else %}
+        <p class="muted">Seeded sample (no file)</p>
+      {% endif %}
+    {% else %}
+      <p class="muted">Not uploaded</p>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data"
+          action="{{ url_for('main.upload_document', shipment_id=shipment.id, doc_type=key) }}" class="stack">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" required>
+      <button type="submit">{{ 'Replace' if doc else 'Upload' }}</button>
+    </form>
+  </section>
+{% endfor %}
+</div>
+{% endblock %}

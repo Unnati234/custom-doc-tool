@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}New shipment · DocCheck{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>New shipment</h1>
+  <p class="muted">You'll add the documents on the next page.</p>
+  <form method="post" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <label>Importer
+      <input name="importer" maxlength="120" required autofocus>
+    </label>
+    <label>Supplier
+      <input name="supplier" maxlength="120" required>
+    </label>
+    <div class="row">
+      <button class="primary" type="submit">Create shipment</button>
+      <a href="{{ url_for('main.shipments') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

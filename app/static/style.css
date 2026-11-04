@@ -53,3 +53,16 @@ input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; fo
 input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.primary { background: var(--accent); color: #fff; border: 0; padding: 10px;
   border-radius: 6px; font: inherit; cursor: pointer; }
+
+.row { display: flex; gap: 16px; align-items: center; }
+.row-between { display: flex; justify-content: space-between; align-items: center; }
+.narrow { max-width: 420px; }
+.stack { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.btn, button { font: inherit; }
+a.btn { background: var(--accent); color: #fff; padding: 8px 14px; border-radius: 6px; text-decoration: none; }
+button { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+button:hover { border-color: var(--text); }
+button.primary:hover { border-color: transparent; opacity: .92; }
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+.card h2 { font-size: 16px; margin: 0 0 6px; }

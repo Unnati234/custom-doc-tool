@@ -1,8 +1,9 @@
-from flask import (Blueprint, flash, g, redirect, render_template,
-                   request, session, url_for)
+from flask import (Blueprint, abort, flash, redirect, render_template,
+                   request, send_from_directory, session, url_for, current_app)
 
 from ..auth import check_csrf, csrf_token, current_user, login_required
-from ..models import Shipment, User
+from ..models import CrossCheck, Document, Shipment, User, db
+from ..uploads import delete_upload, save_upload
 
 bp = Blueprint("main", __name__)
 
@@ -12,6 +13,11 @@ STATUS_LABELS = {
     "needs_review": "Needs review",
     "cleared": "Cleared",
     "exported": "Exported",
+}
+DOC_TYPES = {
+    "invoice": "Invoice",
+    "packing_list": "Packing list",
+    "bill_of_lading": "Bill of lading",
 }
 
 
@@ -30,6 +36,15 @@ def _safe_next(target):
     if target and target.startswith("/") and not target.startswith("//"):
         return target
     return url_for("main.shipments")
+
+
+def _next_shipment_id():
+    nums = []
+    for s in Shipment.query.all():
+        suffix = s.id.split("-")[-1]
+        if suffix.isdigit():
+            nums.append(int(suffix))
+    return f"SHP-{(max(nums) if nums else 24800) + 1}"
 
 
 @bp.route("/")
@@ -64,8 +79,7 @@ def shipments():
     if status not in STATUS_LABELS:
         status = None  # ignore unknown filter values
 
-    query = Shipment.query.order_by(Shipment.created_at.desc())
-    all_shipments = query.all()
+    all_shipments = Shipment.query.order_by(Shipment.created_at.desc()).all()
     counts = {key: 0 for key in STATUS_LABELS}
     for s in all_shipments:
         counts[s.status] = counts.get(s.status, 0) + 1
@@ -82,3 +96,78 @@ def shipments():
         })
     return render_template("shipments.html", rows=rows, counts=counts,
                            total=len(all_shipments), active=status)
+
+
+@bp.route("/shipments/new", methods=["GET", "POST"])
+@login_required
+def new_shipment():
+    if request.method == "POST":
+        importer = request.form.get("importer", "").strip()
+        supplier = request.form.get("supplier", "").strip()
+        if not importer or not supplier:
+            flash("Importer and supplier are both required.")
+        elif len(importer) > 120 or len(supplier) > 120:
+            flash("Names can be at most 120 characters.")
+        else:
+            shipment = Shipment(
+                id=_next_shipment_id(), importer_name=importer, supplier_name=supplier,
+                status="uploaded", created_by=current_user().id,
+            )
+            db.session.add(shipment)
+            db.session.commit()
+            return redirect(url_for("main.shipment_detail", shipment_id=shipment.id))
+    return render_template("new_shipment.html")
+
+
+@bp.route("/shipments/<shipment_id>")
+@login_required
+def shipment_detail(shipment_id):
+    shipment = db.session.get(Shipment, shipment_id) or abort(404)
+    docs = {d.doc_type: d for d in shipment.documents}
+    return render_template("shipment_detail.html", shipment=shipment,
+                           docs=docs, DOC_TYPES=DOC_TYPES)
+
+
+@bp.route("/shipments/<shipment_id>/upload/<doc_type>", methods=["POST"])
+@login_required
+def upload_document(shipment_id, doc_type):
+    shipment = db.session.get(Shipment, shipment_id) or abort(404)
+    if doc_type not in DOC_TYPES:
+        abort(404)
+    back = redirect(url_for("main.shipment_detail", shipment_id=shipment_id))
+
+    try:
+        rel = save_upload(request.files.get("file"), shipment_id, doc_type)
+    except ValueError as e:
+        flash(str(e))
+        return back
+
+    doc = Document.query.filter_by(shipment_id=shipment_id, doc_type=doc_type).first()
+    if doc:  # replacing: drop the old file and anything extracted from it
+        delete_upload(doc.file_path)
+        for f in list(doc.fields):
+            db.session.delete(f)
+        for item in list(doc.line_items):
+            db.session.delete(item)
+        doc.file_path = rel
+        doc.extraction_status = "pending"
+    else:
+        db.session.add(Document(shipment_id=shipment_id, doc_type=doc_type,
+                                file_path=rel, extraction_status="pending"))
+
+    # New or replaced documents make old cross-check results stale
+    for c in list(shipment.cross_checks):
+        db.session.delete(c)
+    shipment.status = "uploaded"
+    db.session.commit()
+    flash(f"{DOC_TYPES[doc_type]} uploaded.")
+    return back
+
+
+@bp.route("/documents/<int:doc_id>/file")
+@login_required
+def document_file(doc_id):
+    doc = db.session.get(Document, doc_id) or abort(404)
+    if not doc.file_path:
+        abort(404)
+    return send_from_directory(current_app.config["UPLOAD_DIR"], doc.file_path)
