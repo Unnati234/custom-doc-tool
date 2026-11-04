@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DocCheck{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% if user %}
+<header class="topbar">
+  <a class="brand" href="{{ url_for('main.shipments') }}">DocCheck</a>
+  <div class="who">
+    <span class="muted">{{ user.name }} · {{ user.role }}</span>
+    <form method="post" action="{{ url_for('main.logout') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button class="link" type="submit">Sign out</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+<main class="page">
+  {% for message in get_flashed_messages() %}
+    <div class="notice">{{ message }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

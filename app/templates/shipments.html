@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Shipments · DocCheck{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Shipments</h1>
+</div>
+
+<nav class="filters">
+  <a href="{{ url_for('main.shipments') }}" class="chip {{ 'on' if not active }}">All <span>{{ total }}</span></a>
+  {% for key, label in STATUS_LABELS.items() %}
+    <a href="{{ url_for('main.shipments', status=key) }}" class="chip {{ 'on' if active == key }}">
+      {{ label }} <span>{{ counts[key] }}</span>
+    </a>
+  {% endfor %}
+</nav>
+
+{% if rows %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Shipment</th><th>Supplier</th><th>Importer</th><th>Documents</th><th>Attention</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td class="mono">{{ r.s.id }}</td>
+      <td>{{ r.s.supplier_name }}</td>
+      <td>{{ r.s.importer_name }}</td>
+      <td>{{ r.docs }} of 3</td>
+      <td>
+        {% if r.flagged or r.failed %}
+          <span class="attn">{{ r.flagged }} to confirm · {{ r.failed }} failed check{{ '' if r.failed == 1 else 's' }}</span>
+        {% else %}
+          <span class="muted">None</span>
+        {% endif %}
+      </td>
+      <td><span class="badge {{ r.s.status }}">{{ STATUS_LABELS[r.s.status] }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+  <div class="empty">
+    <p>No shipments{% if active %} with this status{% endif %}.</p>
+  </div>
+{% endif %}
+{% endblock %}
