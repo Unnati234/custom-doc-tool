@@ -4,8 +4,10 @@ from flask import Flask, render_template
 
 from .models import db
 
+from dotenv import load_dotenv
 
 def create_app(config=None):
+    load_dotenv()  # reads .env for local development
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///app.db")
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-me")
