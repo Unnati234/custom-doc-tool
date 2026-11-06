@@ -1,3 +1,7 @@
+import os
+
+from ..extraction import ExtractionError, UnreadableDocument, extract_document
+from ..pipeline import apply_extraction, refresh_shipment
 from flask import (Blueprint, abort, flash, redirect, render_template,
                    request, send_from_directory, session, url_for, current_app)
 
@@ -171,3 +175,48 @@ def document_file(doc_id):
     if not doc.file_path:
         abort(404)
     return send_from_directory(current_app.config["UPLOAD_DIR"], doc.file_path)
+
+def _run_extraction(doc):
+    """Extract one document and return a message for the user."""
+    label = DOC_TYPES[doc.doc_type]
+    path = os.path.join(current_app.config["UPLOAD_DIR"], doc.file_path)
+    try:
+        result = extract_document(path, doc.doc_type)
+    except UnreadableDocument as e:
+        doc.extraction_status = "manual"
+        return f"{label} could not be read ({e}). It needs manual entry."
+    except ExtractionError as e:
+        doc.extraction_status = "failed"
+        return f"{label}: {e}"
+    apply_extraction(doc, result)
+    doc.extraction_status = "done"
+    return f"{label} extracted."
+
+
+@bp.route("/documents/<int:doc_id>/extract", methods=["POST"])
+@login_required
+def extract_one(doc_id):
+    doc = db.session.get(Document, doc_id) or abort(404)
+    if not doc.file_path:
+        flash("This seeded sample has no file to read.")
+    else:
+        flash(_run_extraction(doc))
+        refresh_shipment(doc.shipment)
+        db.session.commit()
+    return redirect(url_for("main.shipment_detail", shipment_id=doc.shipment_id))
+
+
+@bp.route("/shipments/<shipment_id>/extract", methods=["POST"])
+@login_required
+def extract_all(shipment_id):
+    shipment = db.session.get(Shipment, shipment_id) or abort(404)
+    todo = [d for d in shipment.documents
+            if d.file_path and d.extraction_status in ("pending", "failed")]
+    if not todo:
+        flash("Nothing left to extract.")
+    for doc in todo:
+        flash(_run_extraction(doc))
+    if todo:
+        refresh_shipment(shipment)
+        db.session.commit()
+    return redirect(url_for("main.shipment_detail", shipment_id=shipment_id))
