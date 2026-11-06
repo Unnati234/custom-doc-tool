@@ -26,6 +26,8 @@ def check_invoice_total(line_items, stated_total, tolerance_pct="0.5"):
     rule = "invoice_total"
     if not line_items or stated_total is None:
         return CheckResult(rule, SKIPPED, "Missing line items or stated total")
+    if any(i.get("qty") is None or i.get("unit_price") is None for i in line_items):
+        return CheckResult(rule, SKIPPED, "A line item is missing quantity or unit price")
 
     calculated = sum(_d(i["qty"]) * _d(i["unit_price"]) for i in line_items)
     stated = _d(stated_total)
@@ -74,6 +76,8 @@ def check_qty_per_item(invoice_items, packing_items):
     rule = "qty_per_item"
     if not invoice_items or not packing_items:
         return CheckResult(rule, SKIPPED, "Need items in both invoice and packing list")
+    if any(i.get("qty") is None for i in list(invoice_items) + list(packing_items)):
+        return CheckResult(rule, SKIPPED, "A line item is missing a quantity")
 
     inv = {_key(i["description"]): _d(i["qty"]) for i in invoice_items}
     pl = {_key(i["description"]): _d(i["qty"]) for i in packing_items}

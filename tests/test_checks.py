@@ -69,3 +69,12 @@ def test_shp_24811_end_to_end_fails_on_weight_only():
     assert results["gross_weight"] == FAIL
     assert results["invoice_total"] == PASS
     assert results["qty_per_item"] == PASS
+    
+def test_invoice_total_skipped_when_price_missing():
+    items = [{"description": "x", "qty": 2, "unit_price": None}]
+    assert check_invoice_total(items, "10").status == SKIPPED
+
+
+def test_qty_per_item_skipped_when_qty_missing():
+    inv = [{"description": "x", "qty": None}]
+    assert check_qty_per_item(inv, [{"description": "x", "qty": 1}]).status == SKIPPED
