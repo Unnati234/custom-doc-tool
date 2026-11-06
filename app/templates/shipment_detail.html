@@ -2,10 +2,18 @@
 {% block title %}{{ shipment.id }} · DocCheck{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('main.shipments') }}">← Shipments</a></p>
-<div class="page-head">
-  <h1><span class="mono">{{ shipment.id }}</span>
-    <span class="badge {{ shipment.status }}">{{ STATUS_LABELS[shipment.status] }}</span></h1>
-  <p class="muted">{{ shipment.supplier_name }} → {{ shipment.importer_name }}</p>
+<div class="page-head row-between">
+  <div>
+    <h1><span class="mono">{{ shipment.id }}</span>
+      <span class="badge {{ shipment.status }}">{{ STATUS_LABELS[shipment.status] }}</span></h1>
+    <p class="muted">{{ shipment.supplier_name }} → {{ shipment.importer_name }}</p>
+  </div>
+  {% if docs %}
+  <form method="post" action="{{ url_for('main.extract_all', shipment_id=shipment.id) }}" data-busy="Extracting…">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <button class="primary" type="submit">Extract all</button>
+  </form>
+  {% endif %}
 </div>
 
 <div class="doc-grid">
@@ -17,11 +25,15 @@
       <p class="muted">
         {% if doc.extraction_status == 'pending' %}Uploaded · not extracted yet
         {% elif doc.extraction_status == 'done' %}Extracted
-        {% elif doc.extraction_status == 'manual' %}Manual entry needed
-        {% else %}Extraction failed{% endif %}
+        {% elif doc.extraction_status == 'manual' %}Unreadable · manual entry needed
+        {% else %}Extraction failed · try again{% endif %}
       </p>
       {% if doc.file_path %}
         <p><a href="{{ url_for('main.document_file', doc_id=doc.id) }}" target="_blank" rel="noopener">View file</a></p>
+        <form method="post" action="{{ url_for('main.extract_one', doc_id=doc.id) }}" data-busy="Extracting…">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button type="submit">{{ 'Re-extract' if doc.extraction_status == 'done' else 'Extract' }}</button>
+        </form>
       {% else %}
         <p class="muted">Seeded sample (no file)</p>
       {% endif %}
@@ -38,4 +50,60 @@
   </section>
 {% endfor %}
 </div>
+
+{% if shipment.cross_checks %}
+<h2 class="section">Cross-checks</h2>
+<div class="table-wrap"><table><tbody>
+  {% for c in shipment.cross_checks %}
+  <tr>
+    <td>{{ c.rule|replace('_', ' ')|capitalize }}</td>
+    <td><span class="badge {{ c.status }}">{{ c.status }}</span></td>
+    <td class="wrap">{{ c.detail }}</td>
+  </tr>
+  {% endfor %}
+</tbody></table></div>
+{% endif %}
+
+{% for key, label in DOC_TYPES.items() %}
+  {% set doc = docs.get(key) %}
+  {% if doc and doc.fields %}
+  <h2 class="section">{{ label }} · extracted data</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Field</th><th>Value</th><th>Confidence</th><th></th></tr></thead>
+    <tbody>
+    {% for f in doc.fields if f.line_no is none %}
+      <tr class="{{ 'flag' if f.state == 'needs_confirm' }}">
+        <td>{{ f.name|replace('_', ' ') }}</td>
+        <td class="mono">{{ f.current_value if f.current_value is not none else '—' }}</td>
+        <td>{% if f.ai_confidence is not none %}{{ (f.ai_confidence * 100)|round|int }}%{% endif %}</td>
+        <td>{% if f.state == 'needs_confirm' %}<span class="attn">Needs confirmation</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if doc.line_items %}
+  <div class="table-wrap spaced"><table>
+    <thead><tr><th>#</th><th>Description</th><th>HSN</th><th>Qty</th><th>Unit price</th></tr></thead>
+    <tbody>
+    {% for li in doc.line_items %}
+      <tr>
+        <td>{{ li.line_no }}</td><td>{{ li.description }}</td><td class="mono">{{ li.hsn or '—' }}</td>
+        <td class="mono">{{ li.qty if li.qty is not none else '—' }}</td>
+        <td class="mono">{{ li.unit_price if li.unit_price is not none else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  {% endif %}
+{% endfor %}
+
+<script>
+document.querySelectorAll("form[data-busy]").forEach(function (form) {
+  form.addEventListener("submit", function () {
+    var btn = form.querySelector("button[type=submit]");
+    if (btn) { btn.disabled = true; btn.textContent = form.dataset.busy; }
+  });
+});
+</script>
 {% endblock %}

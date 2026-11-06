@@ -66,3 +66,11 @@ button.primary:hover { border-color: transparent; opacity: .92; }
 .doc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
 .card h2 { font-size: 16px; margin: 0 0 6px; }
+
+.section { font-size: 16px; margin: 32px 0 10px; }
+td.wrap { white-space: normal; }
+tr.flag td { background: var(--warn-bg); }
+.spaced { margin-top: 12px; }
+.badge.pass { background: var(--ok-bg); color: var(--ok); }
+.badge.fail { background: var(--warn-bg); color: var(--warn); }
+.badge.skipped { background: var(--info-bg); color: var(--info); }
