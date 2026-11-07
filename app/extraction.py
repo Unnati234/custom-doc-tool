@@ -275,3 +275,19 @@ def extract_document(path, doc_type):
     except OSError:
         raise ExtractionError("The uploaded file is missing on the server.")
     return parse_and_validate(_call_model(data, mime, doc_type), doc_type)
+
+def clean_value(name, value):
+    """Check a value a person typed, using the same rules as for AI output. None = invalid."""
+    if value is None or not str(value).strip():
+        return None
+    return _normalise(name, value)
+
+
+def clean_decimal(value):
+    """A typed non-negative number as text, or None if invalid."""
+    if value is None or not str(value).strip():
+        return None
+    text = _number(value)
+    if text is None or Decimal(text) > Decimal("999999999999"):
+        return None
+    return text
