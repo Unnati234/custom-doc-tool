@@ -104,7 +104,7 @@ def test_a_changed_mismatch_flags_confirmed_fields_again(app):
         st = states(s)
         assert st[("invoice", "gross_weight_kg")] == "needs_confirm"
         assert st[("bill_of_lading", "gross_weight_kg")] == "needs_confirm"
-        assert st[("packing_list", "gross_weight_kg")] == "edited"
+        assert st[("packing_list", "gross_weight_kg")] == "needs_confirm"
         assert s.status == "needs_review"
 
 
@@ -189,3 +189,15 @@ def test_review_page_renders_and_ignores_a_bogus_tab(app):
     ok = client.get("/shipments/SHP-T1/review?doc=packing_list")
     assert ok.status_code == 200 and b"Gross weight" in ok.data
     assert client.get("/shipments/SHP-T1/review?doc=nonsense").status_code == 200
+
+def test_three_different_weights_do_not_look_cleared(app):
+    with app.app_context():
+        s = make_shipment()
+        for doc_type, value in (("invoice", "3110"), ("packing_list", "3100"),
+                                ("bill_of_lading", "3187")):
+            d = next(x for x in s.documents if x.doc_type == doc_type)
+            f = next(x for x in d.fields if x.name == "gross_weight_kg")
+            f.current_value, f.state = value, "edited"
+            refresh_shipment(s)
+        assert s.status == "needs_review"
+        assert export_blockers(s)

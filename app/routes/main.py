@@ -1,17 +1,18 @@
 import os
 from decimal import Decimal
-
+from ..reports import accuracy_report
 from ..config import CONFIDENCE_THRESHOLD
 from ..extraction import EXPECTED_FIELDS, clean_decimal, clean_value
 from ..models import Correction, Field, LineItem
 from ..extraction import ExtractionError, UnreadableDocument, extract_document
 from ..pipeline import apply_extraction, refresh_shipment, export_blockers
 from flask import (Blueprint, abort, flash, redirect, render_template,
-                   request, send_from_directory, session, url_for, current_app)
+                   request, send_from_directory, session, url_for, current_app, Response, g)
 
-from ..auth import check_csrf, csrf_token, current_user, login_required
-from ..models import CrossCheck, Document, Shipment, User, db
+from ..auth import check_csrf, csrf_token, current_user, login_required, role_required
+from ..models import CrossCheck, Document, Shipment, User, db, now
 from ..uploads import delete_upload, save_upload
+from ..export import build_csv
 
 bp = Blueprint("main", __name__)
 
@@ -133,8 +134,8 @@ def shipment_detail(shipment_id):
     shipment = db.session.get(Shipment, shipment_id) or abort(404)
     docs = {d.doc_type: d for d in shipment.documents}
     return render_template("shipment_detail.html", shipment=shipment,
-                           docs=docs, DOC_TYPES=DOC_TYPES)
-
+                           docs=docs, DOC_TYPES=DOC_TYPES,
+                           blockers=export_blockers(shipment))      
 
 @bp.route("/shipments/<shipment_id>/upload/<doc_type>", methods=["POST"])
 @login_required
@@ -361,3 +362,25 @@ def manual_entry(doc_id):
     refresh_shipment(doc.shipment)
     db.session.commit()
     return back
+
+@bp.route("/shipments/<shipment_id>/export", methods=["POST"])
+@role_required("manager")
+def export_shipment(shipment_id):
+    shipment = db.session.get(Shipment, shipment_id) or abort(404)
+    blockers = export_blockers(shipment)
+    if blockers:  # the server decides, not the disabled button
+        flash("Cannot export yet: " + "; ".join(blockers) + ".")
+        return redirect(url_for("main.shipment_detail", shipment_id=shipment_id))
+
+    data = build_csv(shipment)
+    shipment.status = "exported"
+    shipment.exported_by = g.user.id
+    shipment.exported_at = now()
+    db.session.commit()
+    return Response(data, mimetype="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="{shipment.id}.csv"'})
+    
+@bp.route("/reports/accuracy")
+@role_required("manager")
+def accuracy():
+    return render_template("accuracy.html", **accuracy_report())    

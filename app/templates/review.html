@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Review {{ shipment.id }} · DocCheck{% endblock %}
+{% block body_class %}wide{% endblock %}
+{% block content %}
+<div class="review-head">
+  <div>
+    <a href="{{ url_for('main.shipment_detail', shipment_id=shipment.id) }}">← {{ shipment.id }}</a>
+    <h1>Review <span class="badge {{ shipment.status }}">{{ STATUS_LABELS[shipment.status] }}</span></h1>
+    <p class="muted">{{ shipment.supplier_name }} → {{ shipment.importer_name }}</p>
+  </div>
+  <nav class="tabs">
+    {% for key, label in DOC_TYPES.items() if key in docs %}
+      <a class="tab {{ 'on' if key == doc.doc_type }}"
+         href="{{ url_for('main.review', shipment_id=shipment.id, doc=key) }}">
+        {{ label }}{% if attention[key] %}<span class="dot">{{ attention[key] }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% set failing = checks|selectattr('status', 'equalto', 'fail')|list %}
+{% if blockers %}
+  <div class="banner warn"><strong>Left to clear this shipment:</strong> {{ blockers|join(' · ') }}</div>
+{% elif failing %}
+  <div class="banner warn">Every field is confirmed, but {{ failing|length }} cross-check{{ ' still fails' if failing|length == 1 else 's still fail' }}. The manager will see this when approving.</div>
+{% else %}
+  <div class="banner ok">Every field on this shipment has been confirmed.</div>
+{% endif %}
+
+<div class="review">
+  <section class="viewer">
+    {% if doc.file_path %}
+      {% if doc.file_path.lower().endswith('.pdf') %}
+        <iframe src="{{ url_for('main.document_file', doc_id=doc.id) }}" title="{{ DOC_TYPES[doc.doc_type] }}"></iframe>
+      {% else %}
+        <img src="{{ url_for('main.document_file', doc_id=doc.id) }}" alt="{{ DOC_TYPES[doc.doc_type] }}">
+      {% endif %}
+    {% else %}
+      <div class="empty">Seeded sample, so there is no file to show.</div>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    {% set open_checks = checks|rejectattr('status', 'equalto', 'pass')|list %}
+    <h2>Cross-checks</h2>
+    {% if checks %}
+      {% for c in open_checks %}
+        <div class="check">
+          <span class="badge {{ c.status }}">{{ c.status }}</span>
+          <div><strong>{{ c.rule|replace('_', ' ')|capitalize }}</strong><br>
+            <span class="muted">{{ c.detail }}</span></div>
+        </div>
+      {% endfor %}
+      <p class="muted small">{{ checks|length - open_checks|length }} of {{ checks|length }} checks passed.</p>
+    {% else %}
+      <p class="muted">No checks yet. They run once documents are extracted.</p>
+    {% endif %}
+
+    <h2>{{ DOC_TYPES[doc.doc_type] }}</h2>
+
+    {% if not fields and not items %}
+      {% if doc.extraction_status in ('manual', 'failed') %}
+        <div class="callout">
+          <p>{{ 'This document could not be read.' if doc.extraction_status == 'manual' else 'Extraction failed for this document.' }}</p>
+          <form method="post" action="{{ url_for('main.manual_entry', doc_id=doc.id) }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button class="primary" type="submit">Enter the fields manually</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="muted">Not extracted yet. Use Extract on the shipment page.</p>
+      {% endif %}
+    {% endif %}
+
+    <ul class="fields">
+    {% for f in fields %}
+      {% set pct = (f.ai_confidence * 100)|round|int if f.ai_confidence is not none else none %}
+      <li class="field {{ f.state }}" id="row-{{ f.id }}">
+        <form method="post" action="{{ url_for('main.save_field', field_id=f.id) }}"
+              class="field-form" data-flag="{{ 1 if f.state == 'needs_confirm' else 0 }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <label for="in-{{ f.id }}">{{ f.name|replace('_', ' ')|capitalize }}</label>
+          <div class="field-row">
+            <input id="in-{{ f.id }}" name="value" value="{{ f.current_value or '' }}"
+                   data-orig="{{ f.current_value or '' }}" maxlength="255" autocomplete="off">
+            <button type="submit" class="primary act">Confirm</button>
+          </div>
+          <div class="meta">
+            {% if f.state == 'needs_confirm' %}
+              <span class="attn">
+                {% if f.current_value is none %}No value yet. Enter it from the document.
+                {% elif f.ai_confidence is none or f.ai_confidence < threshold %}Low confidence ({{ pct }}%).
+                {% else %}Does not match another document.{% endif %}
+              </span>
+            {% elif f.state == 'confirmed' %}Confirmed
+            {% elif f.state == 'edited' %}Edited · AI read {{ f.ai_value if f.ai_value is not none else 'nothing' }}
+            {% elif pct is not none %}{{ pct }}% sure{% endif %}
+          </div>
+        </form>
+      </li>
+    {% endfor %}
+    </ul>
+
+    {% if items %}
+    <h2>Line items</h2>
+    <div class="table-wrap">
+    <table class="items">
+      <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit price</th><th></th></tr></thead>
+      <tbody>
+      {% for li, lf in items %}
+        {% set flagged = lf is not none and lf.state == 'needs_confirm' %}
+        <tr id="row-item-{{ li.id }}" class="{{ 'flag' if flagged }}">
+          <td>{{ li.line_no }}</td>
+          <td><input form="item-{{ li.id }}" name="description" value="{{ li.description or '' }}"
+                     data-orig="{{ li.description or '' }}" maxlength="255" aria-label="Description"></td>
+          <td><input form="item-{{ li.id }}" name="qty" value="{{ li.qty|num }}" data-orig="{{ li.qty|num }}"
+                     inputmode="decimal" aria-label="Quantity"></td>
+          <td><input form="item-{{ li.id }}" name="unit_price" value="{{ li.unit_price|num }}"
+                     data-orig="{{ li.unit_price|num }}" inputmode="decimal" aria-label="Unit price"></td>
+          <td>
+            <form id="item-{{ li.id }}" method="post" action="{{ url_for('main.save_line_item', item_id=li.id) }}"
+                  class="item-form" data-flag="{{ 1 if flagged else 0 }}">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <button type="submit" class="primary act">Confirm</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+<script>
+document.querySelectorAll("form.field-form, form.item-form").forEach(function (form) {
+  var controls = Array.prototype.slice.call(form.elements);
+  var inputs = controls.filter(function (el) { return el.dataset && el.dataset.orig !== undefined; });
+  var btn = controls.filter(function (el) { return el.classList && el.classList.contains("act"); })[0];
+  var flagged = form.dataset.flag === "1";
+  function sync() {
+    var changed = inputs.some(function (el) { return el.value !== el.dataset.orig; });
+    btn.textContent = changed ? "Save" : "Confirm";
+    btn.hidden = !changed && !flagged;
+  }
+  inputs.forEach(function (el) { el.addEventListener("input", sync); });
+  sync();
+});
+</script>
+{% endblock %}

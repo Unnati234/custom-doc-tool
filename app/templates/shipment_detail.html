@@ -8,12 +8,29 @@
       <span class="badge {{ shipment.status }}">{{ STATUS_LABELS[shipment.status] }}</span></h1>
     <p class="muted">{{ shipment.supplier_name }} → {{ shipment.importer_name }}</p>
   </div>
-  {% if docs %}
-  <form method="post" action="{{ url_for('main.extract_all', shipment_id=shipment.id) }}" data-busy="Extracting…">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-    <button class="primary" type="submit">Extract all</button>
-  </form>
-  {% endif %}
+  <div class="row">
+    {% if docs %}
+      <a class="btn" href="{{ url_for('main.review', shipment_id=shipment.id) }}">Review</a>
+      <form method="post" action="{{ url_for('main.extract_all', shipment_id=shipment.id) }}" data-busy="Extracting…">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button type="submit">Extract all</button>
+      </form>
+    {% endif %}
+    {% if user.role == 'manager' %}
+      <form method="post" action="{{ url_for('main.export_shipment', shipment_id=shipment.id) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="primary" type="submit" {{ 'disabled' if blockers }}
+                {% if blockers %}title="{{ blockers|join(' · ') }}"{% endif %}>Approve &amp; export CSV</button>
+      </form>
+    {% endif %}
+  </div>
+{% if blockers %}
+  <div class="banner warn"><strong>Not ready to export:</strong> {{ blockers|join(' · ') }}</div>
+{% elif shipment.status == 'exported' %}
+  <div class="banner ok">Exported.</div>
+{% else %}
+  <div class="banner ok">Ready for manager approval.</div>
+{% endif %}
 </div>
 
 <div class="doc-grid">

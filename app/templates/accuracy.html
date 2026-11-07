@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Accuracy · DocCheck{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Extraction accuracy</h1>
+  <p class="muted">Share of AI-read values that a reviewer left unchanged. Weakest first.</p>
+</div>
+
+{% if by_field %}
+  <h2 class="section">By field</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Field</th><th>Checked</th><th>Corrected</th><th>Accuracy</th></tr></thead>
+    <tbody>
+    {% for r in by_field %}
+      <tr><td>{{ r.name|capitalize }}</td><td>{{ r.total }}</td><td>{{ r.wrong }}</td>
+          <td class="{{ 'attn' if r.pct < 95 }}">{{ r.pct }}%</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+
+  <h2 class="section">By supplier</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Supplier</th><th>Checked</th><th>Corrected</th><th>Accuracy</th></tr></thead>
+    <tbody>
+    {% for r in by_supplier %}
+      <tr><td>{{ r.name }}</td><td>{{ r.total }}</td><td>{{ r.wrong }}</td>
+          <td class="{{ 'attn' if r.pct < 95 }}">{{ r.pct }}%</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="muted small">The client's target is 95% field accuracy. Rows below it are highlighted.</p>
+{% else %}
+  <div class="empty"><p>No extracted documents yet.</p></div>
+{% endif %}
+{% endblock %}

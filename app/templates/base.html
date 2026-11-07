@@ -6,11 +6,12 @@
   <title>{% block title %}DocCheck{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 {% if user %}
 <header class="topbar">
   <a class="brand" href="{{ url_for('main.shipments') }}">DocCheck</a>
   <div class="who">
+    {% if user.role == 'manager' %}<a href="{{ url_for('main.accuracy') }}">Accuracy</a>{% endif %}
     <span class="muted">{{ user.name }} · {{ user.role }}</span>
     <form method="post" action="{{ url_for('main.logout') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token() }}">

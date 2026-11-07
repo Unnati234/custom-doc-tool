@@ -125,7 +125,7 @@ def refresh_shipment(shipment):
                 if f.name != name:
                     continue
                 if r.status == FAIL:
-                    if f.state == "ok" or (changed and f.state == "confirmed"):
+                    if f.state == "ok" or (changed and f.state in ("confirmed", "edited")):
                         f.state = "needs_confirm"
                 elif r.status == PASS and f.state == "needs_confirm" and not _is_low(f):
                     f.state = "ok"
