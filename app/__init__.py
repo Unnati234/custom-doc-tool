@@ -6,6 +6,8 @@ from .models import db
 
 from dotenv import load_dotenv
 
+from decimal import Decimal
+
 def create_app(config=None):
     load_dotenv()  # reads .env for local development
     app = Flask(__name__)
@@ -33,5 +35,20 @@ def create_app(config=None):
 
     for code in messages:
         app.register_error_handler(code, error_page)
+        
+    
+    @app.template_filter("num")
+    def num(value):
+        """2400.000 -> 2400, 6.8000 -> 6.8, None -> empty."""
+        if value is None:
+            return ""
+        return format(Decimal(str(value)).normalize(), "f")
 
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
+    
     return app

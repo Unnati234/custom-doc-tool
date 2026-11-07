@@ -1,7 +1,11 @@
 import os
+from decimal import Decimal
 
+from ..config import CONFIDENCE_THRESHOLD
+from ..extraction import EXPECTED_FIELDS, clean_decimal, clean_value
+from ..models import Correction, Field, LineItem
 from ..extraction import ExtractionError, UnreadableDocument, extract_document
-from ..pipeline import apply_extraction, refresh_shipment
+from ..pipeline import apply_extraction, refresh_shipment, export_blockers
 from flask import (Blueprint, abort, flash, redirect, render_template,
                    request, send_from_directory, session, url_for, current_app)
 
@@ -220,3 +224,140 @@ def extract_all(shipment_id):
         refresh_shipment(shipment)
         db.session.commit()
     return redirect(url_for("main.shipment_detail", shipment_id=shipment_id))
+
+# ---------------------------------------------------------------- review screen
+
+def _review_url(doc, anchor=None):
+    return url_for("main.review", shipment_id=doc.shipment_id, doc=doc.doc_type, _anchor=anchor)
+
+
+@bp.route("/shipments/<shipment_id>/review")
+@login_required
+def review(shipment_id):
+    shipment = db.session.get(Shipment, shipment_id) or abort(404)
+    docs = {d.doc_type: d for d in shipment.documents}
+    if not docs:
+        flash("Upload the documents first.")
+        return redirect(url_for("main.shipment_detail", shipment_id=shipment_id))
+
+    doc = docs.get(request.args.get("doc")) or next(docs[k] for k in DOC_TYPES if k in docs)
+    attention = {k: sum(1 for f in d.fields if f.state == "needs_confirm") for k, d in docs.items()}
+    fields = sorted((f for f in doc.fields if f.line_no is None), key=lambda f: f.id)
+    line_fields = {f.line_no: f for f in doc.fields if f.line_no is not None}
+    items = [(li, line_fields.get(li.line_no))
+             for li in sorted(doc.line_items, key=lambda x: x.line_no or 0)]
+    return render_template(
+        "review.html", shipment=shipment, docs=docs, doc=doc, DOC_TYPES=DOC_TYPES,
+        attention=attention, fields=fields, items=items, checks=shipment.cross_checks,
+        blockers=export_blockers(shipment), threshold=CONFIDENCE_THRESHOLD,
+    )
+
+
+@bp.route("/fields/<int:field_id>/save", methods=["POST"])
+@login_required
+def save_field(field_id):
+    """One endpoint for both actions: unchanged value = confirm, changed value = edit."""
+    field = db.session.get(Field, field_id) or abort(404)
+    if field.line_no is not None:
+        abort(404)
+    doc = field.document
+    back = redirect(_review_url(doc, f"row-{field.id}"))
+
+    raw = request.form.get("value", "").strip()
+    cleaned = clean_value(field.name, raw)
+    if cleaned is None:
+        label = field.name.replace("_", " ")
+        flash(f"'{raw[:40]}' is not a valid {label}." if raw else "Enter a value first.")
+        return back
+
+    if cleaned == field.current_value:
+        if field.state != "edited":
+            field.state = "confirmed"
+    else:
+        db.session.add(Correction(field_id=field.id, old_value=field.current_value,
+                                  new_value=cleaned, user_id=current_user().id))
+        field.current_value = cleaned
+        field.state = "edited"
+
+    refresh_shipment(doc.shipment)
+    db.session.commit()
+    return back
+
+
+@bp.route("/line-items/<int:item_id>/save", methods=["POST"])
+@login_required
+def save_line_item(item_id):
+    item = db.session.get(LineItem, item_id) or abort(404)
+    doc = item.document
+    back = redirect(_review_url(doc, f"row-item-{item.id}"))
+
+    description = request.form.get("description", "").strip()[:255]
+    if not description:
+        flash("A line item needs a description.")
+        return back
+
+    new_values = {}
+    for col in ("qty", "unit_price"):
+        raw = request.form.get(col, "").strip()
+        if not raw:
+            new_values[col] = None
+            continue
+        cleaned = clean_decimal(raw)
+        if cleaned is None:
+            flash(f"'{raw[:40]}' is not a valid {col.replace('_', ' ')}.")
+            return back
+        new_values[col] = Decimal(cleaned)
+
+    changes = []
+    if description != (item.description or ""):
+        changes.append(("description", item.description, description))
+    for col, new in new_values.items():
+        old = getattr(item, col)
+        same = (old is None and new is None) or (
+            old is not None and new is not None and Decimal(str(old)) == new)
+        if not same:
+            changes.append((col, old, new))
+
+    field = Field.query.filter_by(document_id=doc.id, name="line_item", line_no=item.line_no).first()
+    if field is None:  # seeded samples have no field row yet
+        field = Field(document_id=doc.id, name="line_item", line_no=item.line_no,
+                      ai_value=item.description, current_value=item.description, state="ok")
+        db.session.add(field)
+        db.session.flush()
+
+    for col, old, new in changes:
+        db.session.add(Correction(
+            field_id=field.id,
+            old_value=f"{col}: {'' if old is None else old}",
+            new_value=f"{col}: {'' if new is None else new}",
+            user_id=current_user().id,
+        ))
+        setattr(item, col, new)
+
+    if changes:
+        field.current_value = item.description
+        field.state = "edited"
+    elif field.state != "edited":
+        field.state = "confirmed"
+
+    refresh_shipment(doc.shipment)
+    db.session.commit()
+    return back
+
+
+@bp.route("/documents/<int:doc_id>/manual", methods=["POST"])
+@login_required
+def manual_entry(doc_id):
+    """Unreadable or failed document: create blank fields a person fills in."""
+    doc = db.session.get(Document, doc_id) or abort(404)
+    back = redirect(_review_url(doc))
+    if doc.extraction_status not in ("manual", "failed") or doc.fields:
+        flash("This document already has data.")
+        return back
+    for name in EXPECTED_FIELDS[doc.doc_type]:
+        doc.fields.append(Field(name=name, ai_value=None, ai_confidence=0.0,
+                                current_value=None, state="needs_confirm"))
+    doc.extraction_status = "done"
+    refresh_shipment(doc.shipment)
+    db.session.commit()
+    return back
