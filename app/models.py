@@ -36,7 +36,9 @@ class Shipment(db.Model):
     status = db.Column(db.String(20), default="uploaded", nullable=False)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     created_at = db.Column(db.DateTime, default=now)
-
+    exported_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    exported_at = db.Column(db.DateTime)
+    
     documents = db.relationship("Document", backref="shipment", cascade="all, delete-orphan")
     cross_checks = db.relationship("CrossCheck", backref="shipment", cascade="all, delete-orphan")
 
