@@ -15,6 +15,7 @@ def create_app(config=None):
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-me")
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("COOKIE_SECURE") == "1"
     app.config["UPLOAD_DIR"] = os.environ.get("UPLOAD_DIR", os.path.join(app.root_path, "..", "uploads"))
     app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB per request
     if config:
